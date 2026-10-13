@@ -178,8 +178,56 @@ async function submitAuth(){if(!cloudClient&&!makeSupabaseClient()){setAuthMessa
 function friendlyAuthError(m){if(/Invalid login credentials/i.test(m))return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';if(/Email not confirmed/i.test(m))return 'أكد بريدك الإلكتروني من الرسالة اللي وصلتك.';if(/User already registered/i.test(m))return 'الحساب موجود بالفعل. اختار تسجيل الدخول.';if(/Password should be/i.test(m))return 'كلمة المرور قصيرة. استخدم 8 أحرف على الأقل.';return m}
 async function handleCloudSession(session){if(!session)return;if(loadingCloudUser===session.user.id)return;loadingCloudUser=session.user.id;cloudSession=session;cloudReady=false;setAuthMessage('authMsg','جارٍ تحميل بياناتك من السحابة...',true);try{const {data,error}=await cloudClient.from('medstudy_data').select('data').eq('user_id',session.user.id).maybeSingle();if(error)throw error;if(data&&data.data&&Array.isArray(data.data.tasks)){state={...state,...data.data,settings:{...state.settings,...(data.data.settings||{})}};saveLocalOnly();addReadyPlan(false);await pushCloudData(true)}else{load();addReadyPlan(false);await pushCloudData(true)}cloudReady=true;showApp();setCloudStatus('متصل ومتزامن',true);$('logoutButton').style.display='inline-flex';renderAll();toast('اتحفظت خطتك واتربطت بحسابك السحابي ☁️')}catch(e){cloudSession=null;cloudReady=false;setAuthMessage('authMsg','اتصل الحساب، لكن قاعدة البيانات لسه مش جاهزة أو صلاحياتها ناقصة. افتح ملف supabase_setup.sql في المشروع، نفّذ أوامره داخل Supabase SQL Editor، وبعدها جرّب تسجيل الدخول تاني. التفاصيل: '+(e.message||'خطأ غير معروف'),true)}finally{loadingCloudUser=null}}
 async function pushCloudData(initial=false){if(!cloudClient||!cloudSession||(!cloudReady&&!initial))return;try{const {error}=await cloudClient.from('medstudy_data').upsert({user_id:cloudSession.user.id,data:state,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)throw error;setCloudStatus('متصل ومتزامن',true)}catch(e){setCloudStatus('تعذر المزامنة',false);console.error('Cloud sync failed:',e);toast('تعذر حفظ التغييرات في السحابة. راجع اتصال الإنترنت وإعدادات قاعدة البيانات.')}}
-async function logoutCloud(){if(cloudClient)await cloudClient.auth.signOut();cloudSession=null;cloudReady=false;loadingCloudUser=null;setCloudStatus('غير متصل',false);showAuthGate('loginPanel');setAuthMessage('authMsg','تم تسجيل الخروج.',true)}
-async function initAuth(){const url=localStorage.getItem(SB_URL_STORE),key=localStorage.getItem(SB_KEY_STORE);if(!url||!key){showAuthGate('setupPanel');return}if(!makeSupabaseClient()){showAuthGate('setupPanel');setAuthMessage('setupMsg','تعذر تحميل Supabase. تأكد من الإنترنت.',true);return}showAuthGate('loginPanel');cloudClient.auth.onAuthStateChange((event,session)=>{if(session&&['SIGNED_IN','INITIAL_SESSION','TOKEN_REFRESHED','USER_UPDATED'].includes(event))setTimeout(()=>handleCloudSession(session),0);else if(event==='SIGNED_OUT'){cloudSession=null;cloudReady=false;showAuthGate('loginPanel');setCloudStatus('غير متصل',false)}});try{const {data,error}=await cloudClient.auth.getSession();if(error)throw error;if(data.session)await handleCloudSession(data.session)}catch(e){setAuthMessage('authMsg','تعذر الاتصال: '+(e.message||'خطأ غير معروف'),true)}}
+async function logoutCloud(){if(cloudClient)await cloudClient.auth.signOut();cloudSession=null;cloudReady=false;loadingCloudUser=null;setCloudStatus('غير متصل',false);showAuthGate('loginPanel');setAuthMessage('authMsg','تم تسجيل الخروج.',true)}```javascript
+async function initAuth(){
+  const DEFAULT_SB_URL='https://sxbjxfjpntimajdszusi.supabase.co';
+  const DEFAULT_SB_KEY='sb_publishable_EyZqb-ag7kn2CEUi3FjMUw_s1VxVBuk';
+
+  if(!localStorage.getItem(SB_URL_STORE)){
+    localStorage.setItem(SB_URL_STORE,DEFAULT_SB_URL);
+  }
+
+  if(!localStorage.getItem(SB_KEY_STORE)){
+    localStorage.setItem(SB_KEY_STORE,DEFAULT_SB_KEY);
+  }
+
+  const url=localStorage.getItem(SB_URL_STORE);
+  const key=localStorage.getItem(SB_KEY_STORE);
+
+  if(!url||!key){
+    showAuthGate('setupPanel');
+    return;
+  }
+
+  if(!makeSupabaseClient()){
+    showAuthGate('setupPanel');
+    setAuthMessage('setupMsg','تعذر تحميل Supabase. تأكد من الإنترنت.',true);
+    return;
+  }
+
+  showAuthGate('loginPanel');
+
+  cloudClient.auth.onAuthStateChange((event,session)=>{
+    if(session&&['SIGNED_IN','INITIAL_SESSION','TOKEN_REFRESHED','USER_UPDATED'].includes(event)){
+      setTimeout(()=>handleCloudSession(session),0);
+    }else if(event==='SIGNED_OUT'){
+      cloudSession=null;
+      cloudReady=false;
+      showAuthGate('loginPanel');
+      setCloudStatus('غير متصل',false);
+    }
+  });
+
+  try{
+    const {data,error}=await cloudClient.auth.getSession();
+    if(error)throw error;
+    if(data.session)await handleCloudSession(data.session);
+  }catch(e){
+    setAuthMessage('authMsg','تعذر الاتصال: '+(e.message||'خطأ غير معروف'),true);
+  }
+}
+```
+
 
 function init(){load();$('todayLabel').textContent=new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'});$('dailyDate').value=todayISO();$('filterSubject').innerHTML='<option value="">كل المواد</option>'+SUBJECTS.map(s=>`<option>${s}</option>`).join('');$('taskDate').value=todayISO();addReadyPlan(false);renderAll();updateTimer();initAuth()}
 init();
